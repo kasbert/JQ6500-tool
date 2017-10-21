@@ -9,11 +9,6 @@ from scsi_cdb_jq6500_write import JQ6500Write
 from scsi_cdb_jq6500_erase import JQ6500Erase
 import argparse
 
-def ba_to_hex(ba):
-    result = ''
-    for b in ba:
-        result += hex(b)[2:]
-    return result
 
 def read_jq6500(self,
                address,
@@ -47,6 +42,8 @@ def erase_jq6500(self,
 
 def read_flash(sd, blocksize, offset, size, debug = False):
     data = ""
+    if offset + size > 8192:
+       raise BaseException("Out of range")
     for i in range(0, size, 16):
         s = SCSI(sd, 0x4096)
         r = read_jq6500(s, (offset + i) * 0x100, 16 * 0x100,)
@@ -58,6 +55,8 @@ def read_flash(sd, blocksize, offset, size, debug = False):
 
 
 def write_flash(sd, blocksize, offset, size, data, debug = False):
+    if offset + size > 8192:
+       raise BaseException("Out of range")
     # Erase
     for i in range(0, size, 16):
         s = SCSI(sd, 0x0)
@@ -86,6 +85,8 @@ def write_flash(sd, blocksize, offset, size, data, debug = False):
             assert ord(d2[j]) == d1[j], ("Verify failed",offset+i,j,ord(d2[j]),d1[j])
 
 def erase_flash(sd, offset, size, debug = False):
+    if offset + size > 8192:
+       raise BaseException("Out of range")
     for i in range(0, size, 16):
         s = SCSI(sd, 0x0)
         r = erase_jq6500(s, (offset + i) * 0x100,)
@@ -98,8 +99,8 @@ def main(argv):
     parser.add_argument('-w', dest='writefile')
     parser.add_argument('-r', dest='readfile')
     parser.add_argument('-b', dest='blocksize', type=int, default=256)
-    parser.add_argument('-s', dest='size', type=int, default=1)
-    parser.add_argument('-o', dest='offset', type=int, default=8000) # 4
+    parser.add_argument('-s', dest='size', type=int, default=8192-1024)
+    parser.add_argument('-o', dest='offset', type=int, default=1024)
     parser.add_argument('-e', dest='erase', action='store_true', default=False)
     parser.add_argument('-d', dest='debug', action='store_true', default=False)
     parser.add_argument("device", help="Linux SG device name, e.g. /dev/sg5")
