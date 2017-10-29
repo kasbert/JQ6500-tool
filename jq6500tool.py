@@ -65,23 +65,26 @@ def write_flash(sd, blocksize, offset, size, data, debug = False):
     for i in range(0, size, 16):
         s = SCSI(sd, 0x0)
         r = erase_jq6500(s, (offset + i) * 0x100,)
-        print "Erase flash", offset + i, 0x1000, "\r",
+        print "Erase flash", offset + i, '/', offset + size, "\r",
         sys.stdout.flush()
         if debug:
             print "CMD", repr(r.cdb)
     print
     # Write
+    while len(data) < size * 0x100:
+        data += '\0x00'
     for i in range(0, size, 1):
         s = SCSI(sd, 0x100)
         d = data[(i*0x100):((i+1)*0x100)]
         try:
             r = write_jq6500(s, (offset + i) * 0x100, 0x100, d)
         except Exception as e:
+            print
 	    print "Exception",repr(e)
             print (e.message)
             print "Retry"
             r = write_jq6500(s, (offset + i) * 0x100, 0x100, d)
-        print "Write flash", offset + i, len(d), "\r",
+        print "Write flash", offset + i, '/', offset + size, "\r",
         sys.stdout.flush()
         if debug:
             print "CMD", repr(r.cdb)
@@ -92,7 +95,7 @@ def write_flash(sd, blocksize, offset, size, data, debug = False):
         r = read_jq6500(s, (offset + i) * 0x100, 16 * 0x100,)
         d1 = r.datain
         d2 = data[(i*0x100):((i+16)*0x100)]
-        print "Verify flash", offset + i, 0x100, len(d1), len(d2), "\r",
+        print "Verify flash", offset + i, '/', offset + size, "\r",
         sys.stdout.flush()
         if debug:
             print "CMD", repr(r.cdb)
@@ -190,7 +193,7 @@ def main(argv):
             f=open(args.writefile, "rb")
             data = f.read()
             f.close()
-            size = (len(data) + 255) / 256
+            size = len(data) / 256
             write_flash(sd, args.blocksize, args.offset, size, data, args.debug)
 
         if args.readfile is None and args.writefile is None and not args.erase and len(args.files) > 0:
