@@ -43,13 +43,16 @@ The module has 2MB flash memory. Memory map:
 ```
 
 Header:
+Directory structure is described in little endian 32 bit unsigned integers.
 ```
-# 0-7 constant bytes
-# 8-23 ignored / garbage ?
-# 24 count of tracks
-# 28 + n*8 address
-# 32 + n*8 length
-# 36 + count*8 track1
+Header:
+# 4 Number of subdirectories (N)
+# N*4 Offset of subdir
+Subdir:
+# 4 Number of tracks in this dir (M)
+# M*8 Directory entry
+#   4 Offset of track
+#   4 Size of track
 #
 # Example headers
 # 05 00 00 00 18 00 04 00 ec 42 06 00 f0 42 06 00 f4 42 06 00 f8 42 06 00 01 00 00 00
@@ -68,3 +71,5 @@ total 78
 -r-xr-xr-x 1 root root    99 tammi 14  2014 config.ini
 -r-xr-xr-x 1 root root 77904 tammi 14  2014 MusicDownload.exe
 ```
+
+Thanks to rma-x for subdirectory info. See https://github.com/kasbert/JQ6500-tool/issues/1
