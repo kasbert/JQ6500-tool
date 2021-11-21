@@ -6,7 +6,11 @@ This one: https://www.elecfreaks.com/wiki/index.php?title=JQ6500_Mini_MP3_Module
 
 The device has about 1834900 bytes for MP3 data.
 
-Install python-scsi first: https://github.com/rosjat/python-scsi.git
+Install python-scsi first: (https://github.com/rosjat/python-scsi.git)
+```
+sudo apt install libiscsi-dev
+sudo pip install pyscsi cython-sgio
+```
 
 To write tracks:
 
@@ -14,7 +18,11 @@ To write tracks:
 sudo python jq6500tool.py track01.mp3 track02.mp3 track03.mp3
 ```
 
-
+The device may be shown as APC UPS in lsusb listing:
+```
+Bus 002 Device 002: ID 051d:0002 American Power Conversion Uninterruptible Power Supply
+```
+But it still works.
 The device is identified as CD-ROM and SD card reader composite device in the kernel log:
 
 ```
