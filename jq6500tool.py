@@ -10,7 +10,11 @@ from scsi_cdb_jq6500_erase import JQ6500Erase
 import argparse
 import glob
 import os
+import traceback
 from struct import *
+
+MAX_BLOCKS = 8192
+BASE_BLOCK = 1024 # 0x40000
 
 def read_jq6500(self,
                address,
@@ -43,77 +47,81 @@ def erase_jq6500(self,
     return cmd
 
 def read_flash(sd, blocksize, offset, size, debug = False):
-    data = ""
-    if offset + size > 8192:
+    data = bytearray()
+    if size > MAX_BLOCKS:
        raise BaseException("Out of range")
     for i in range(0, size, 16):
         s = SCSI(sd, 0x4096)
         r = read_jq6500(s, (offset + i) * 0x100, 16 * 0x100,)
-        data = data + r.datain
-        print "Read flash", (offset + i), len(r.datain), "\r",
+        data.extend(r.datain)
+        print("Read flash", (offset + i), len(r.datain), "\r", end=' ')
         sys.stdout.flush()
         if debug:
-            print "CMD", repr(r.cdb)
-    print
+            print("CMD", repr(r.cdb))
+    print()
     return data
 
 
-def write_flash(sd, blocksize, offset, size, data, debug = False):
-    if offset + size > 8192:
-       raise BaseException("Out of range (max "+str((8192-offset)*256)+" bytes)")
+def write_flash(sd, blocksize, offset, size, indata, debug = False):
+    if size > MAX_BLOCKS:
+       raise BaseException("Out of range (max "+str((MAX_BLOCKS)*256)+" bytes)")
+    data = bytearray()
+    data.extend(indata)
+    while len(data) < size * 0x100:
+        data.append(0)
     # Erase
     for i in range(0, size, 16):
         s = SCSI(sd, 0x0)
         r = erase_jq6500(s, (offset + i) * 0x100,)
-        print "Erase flash", offset + i, '/', offset + size, "\r",
+        print("Erase flash", offset + i, '/', offset + size, "\r", end=' ')
         sys.stdout.flush()
         if debug:
-            print "CMD", repr(r.cdb)
-    print
+            print("CMD", repr(r.cdb))
+    print()
     # Write
-    while len(data) < size * 0x100:
-        data += '\0x00'
     for i in range(0, size, 1):
         s = SCSI(sd, 0x100)
         d = data[(i*0x100):((i+1)*0x100)]
         try:
             r = write_jq6500(s, (offset + i) * 0x100, 0x100, d)
         except Exception as e:
-            print
-	    print "Exception",repr(e)
-            print (e.message)
-            print "Retry"
+            print()
+            print("Exception",repr(e))
+            print((e.message))
+            print("Retry")
             r = write_jq6500(s, (offset + i) * 0x100, 0x100, d)
-        print "Write flash", offset + i, '/', offset + size, "\r",
+        print("Write flash", offset + i, '/', offset + size, "\r", end=' ')
         sys.stdout.flush()
         if debug:
-            print "CMD", repr(r.cdb)
-    print
+            print("CMD", repr(r.cdb))
+    print()
     # Verify
     for i in range(0, size, 16):
         s = SCSI(sd, 0x4096)
         r = read_jq6500(s, (offset + i) * 0x100, 16 * 0x100,)
         d1 = r.datain
         d2 = data[(i*0x100):((i+16)*0x100)]
-        print "Verify flash", offset + i, '/', offset + size, "\r",
+        print("Verify flash", offset + i, '/', offset + size, "\r", end=' ')
         sys.stdout.flush()
         if debug:
-            print "CMD", repr(r.cdb)
+            print("CMD", repr(r.cdb))
         for j in range(len(d2)):
-            assert ord(d2[j]) == d1[j], ("Verify failed",offset+i,j,ord(d2[j]),d1[j])
-    print
+            if i+j/256 >= size:
+                continue
+            assert d2[j] == d1[j], ("Verify failed, block %d, [%d] %x != %x" % (offset+i+j/256,j&0xff,d2[j],d1[j]))
+    print()
 
 def erase_flash(sd, offset, size, debug = False):
-    if offset + size > 8192:
+    if size > MAX_BLOCKS:
        raise BaseException("Out of range")
     for i in range(0, size, 16):
         s = SCSI(sd, 0x0)
         r = erase_jq6500(s, (offset + i) * 0x100,)
-        print "Erase flash", offset + i, 0x1000, "\r",
+        print("Erase flash", offset + i, 0x1000, "\r", end=' ')
         sys.stdout.flush()
         if debug:
-            print "CMD", repr(r.cdb)
-    print
+            print("CMD", repr(r.cdb))
+    print()
 
 def find_device(device, debug):
     if device is None:
@@ -123,56 +131,61 @@ def find_device(device, debug):
     for device in devices:
         try:
             if debug:
-                print "Trying", device
+                print("Trying", device, ' ',  end = '')
             sd = SCSIDevice(device)
             s = SCSI(sd)
             i = s.inquiry().result
+            vendor = i['t10_vendor_identification'].decode("latin1", "backslashreplace").strip()
+            product = i['product_identification'].decode("latin1", "backslashreplace").strip()
             if debug:
-                print str(i['t10_vendor_identification']).strip(), str(i['product_identification']).strip()
-            if str(i['t10_vendor_identification']).strip() == 'YULIN' and str(i['product_identification']).strip() == 'PROGRAMMER':
-                print "Device",device
+                print(vendor, product)
+            if vendor == 'YULIN' and product == 'PROGRAMMER':
+                print("Device",device)
                 return sd
         except Exception as e:
-	    print "Exception",repr(e), e.message
+            print("Exception",traceback.format_exc())
             pass
-    raise BaseException("Cannot find JQ6500 (YULIN PROGRAMMER) device")    
+    raise BaseException("Cannot find JQ6500 (YULIN PROGRAMMER) device")
 
 def pack_files(files, debug):
-    header = '\x05\x00\x00\x00\x18\x00\x04\x00'
-    header += '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+    BASE = 0x40000
+    dircount = 1
+    header = bytearray()
+    header.extend(pack('<I', dircount))
+    diroffset = BASE + 4 + 4 * dircount
+    header.extend(pack('<I', diroffset))
     count = len(files)
-    header += pack('<L', count)
-    assert len(header) == 28, len(header)
-    addr = 0x40000 + 28 + count * 8
+    header.extend(pack('<I', count))
+    addr = diroffset + 4 + count * 8
     for i in range(count):
         file = files[i]
         length = os.stat(file).st_size
-        header += pack('<LL', addr, length)
+        header.extend(pack('<II', addr, length))
         if debug:
-            print file, "%x" % addr, length, i
+            print(file, "%x" % addr, length, i)
         addr += length
 
     if debug:
         for b in header:
-            print "%02x" % (ord(b)),
-        print
+            print("%02x" % (ord(b)), end=' ')
+        print()
     data = header
     for filename in files:
-        print " Adding",filename
+        print(" Adding",filename)
         f=open(filename, "rb")
         try:
             data = data + f.read()
         finally:
             f.close()
     return data
-            
+
 def main(argv):
     parser = argparse.ArgumentParser(description='JQ6500 MP3 module flash reader/programmer.')
-    parser.add_argument('-w', dest='writefile')
-    parser.add_argument('-r', dest='readfile')
+    parser.add_argument('-w', dest='writefile', help='Write from file to module')
+    parser.add_argument('-r', dest='readfile', help='Read from module to file')
     parser.add_argument('-b', dest='blocksize', type=int, default=256)
-    parser.add_argument('-s', dest='size', type=int, default=8192-1024)
-    parser.add_argument('-o', dest='offset', type=int, default=1024)
+    parser.add_argument('-s', dest='size', type=int, default=MAX_BLOCKS-BASE_BLOCK, help="Size in blocks, 1-8192, default " + str(MAX_BLOCKS-BASE_BLOCK))
+    parser.add_argument('-o', dest='offset', type=int, default=BASE_BLOCK, help="Offset in blocks, 0-8191, default " + str(BASE_BLOCK))
     parser.add_argument('-e', dest='erase', action='store_true', default=False)
     parser.add_argument('-d', dest='debug', action='store_true', default=False)
     parser.add_argument('-D', dest="device", help="Linux SG device name, e.g. /dev/sg5")
@@ -185,7 +198,7 @@ def main(argv):
             f=open(args.readfile, "wb")
             f.write(data)
             f.close()
-        
+
         if args.erase:
             data = erase_flash(sd, args.offset, args.size, args.debug)
 
@@ -193,19 +206,17 @@ def main(argv):
             f=open(args.writefile, "rb")
             data = f.read()
             f.close()
-            size = len(data) / 256
+            size = int(len(data) / 256)
             write_flash(sd, args.blocksize, args.offset, size, data, args.debug)
 
         if args.readfile is None and args.writefile is None and not args.erase and len(args.files) > 0:
-            print "Writing MP3 files to flash"
+            print("Writing MP3 files to flash")
             data = pack_files(args.files, args.debug)
-            size = (len(data) + 255) / 256
+            size = int((len(data) + 255) / 256)
             write_flash(sd, args.blocksize, args.offset, size, data, args.debug)
 
     except Exception as e:
-	print "Exception",repr(e), 
-        print (e.message)
-
+        print("Exception", traceback.format_exc())
 
 if __name__ == "__main__":
     main(sys.argv)
