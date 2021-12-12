@@ -8,8 +8,7 @@ The device has about 1834900 bytes for MP3 data.
 
 Install python-scsi first: (https://github.com/rosjat/python-scsi.git)
 ```
-sudo apt install libiscsi-dev
-sudo pip install pyscsi cython-sgio
+sudo pip install pyscsi[sgio]
 ```
 
 To write tracks:
